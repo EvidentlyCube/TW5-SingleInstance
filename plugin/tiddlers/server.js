@@ -21,21 +21,33 @@ module-type: startup
 
         const ws = require('ws');
         const url = require('url');
+        const crypto = require('crypto');
         const wsServer = new ws.WebSocketServer({ noServer: true });
         const clients = [];
+        const modified = new Map();
 
         $tw.wiki.addEventListener("change",function(changes) {
-            console.log(changes);
-
             const message = {};
             const tiddlerTitles = Object.keys(changes);
             for (const tiddlerTitle of tiddlerTitles) {
                 const tiddler = $tw.wiki.getTiddler(tiddlerTitle);
+                const hash = tiddler
+                    ? crypto.createHash('sha1').update(JSON.stringify(tiddler)).digest('base64')
+                    : '<deleted>';
+
+                if (modified.get(tiddlerTitle) === hash) {
+                    continue;
+                }
+
+                modified.set(tiddlerTitle, hash);
+
                 message[tiddlerTitle] = {
                     ...changes[tiddlerTitle],
+                    modified: tiddler && tiddler.fields.modified ? tiddler.fields.modified.getTime() : null,
                     tiddler
                 };
             }
+
             console.log(message);
             const tiddlersJson = JSON.stringify(message);
             for (const client of clients) {
