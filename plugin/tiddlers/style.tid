@@ -1,0 +1,21 @@
+title: $:/plugins/EvidentlyCube/SingleInstance/style
+tags: $:/tags/Stylesheet
+type: text/css
+
+#ec-sinstance_cover {
+	position: fixed;
+	left: 0;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(64, 64, 64, 0.8);
+	z-index: 2000;
+
+	color: white;
+	font-size: 2vw;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-shadow: 0 3px 1px black;
+	cursor: pointer;
+}

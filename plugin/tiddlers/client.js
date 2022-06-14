@@ -1,47 +1,101 @@
 /*\
-title: $:/plugins/EvidentlyCube/SocketSync/client.js
+title: $:/plugins/EvidentlyCube/SingleInstance/client.js
 type: application/javascript
 module-type: startup
 
 \*/
 
-(async function() {
+(async function () {
 
-    /*jslint node: false, browser: true */
-    /*global $tw: true */
-    "use strict";
+	/*jslint node: false, browser: true */
+	/*global $tw: true */
+	"use strict";
 
-    function compareDates(left, right) {
-        left = left && left.toString();
-        right = right && right.toString();
+	if (!$tw.browser || $tw.wiki.getTiddler('$:/config/evidentlycube/SingleInstance/disable')) {
+		return;
+	}
 
-        return left === right;
-    }
-    try {
-        if (!$tw.browser) {
-            return;
-        }
+	const coverDiv = document.createElement('div');
+	coverDiv.id = 'ec-sinstance_cover';
+	coverDiv.innerText = "Connecting to socket server, please wait.";
+	document.querySelector('body').appendChild(coverDiv);
 
-        const webSocket = new WebSocket(`ws://${location.host}/socket-sync`);
-        webSocket.onmessage = (message) => {
-            const data = JSON.parse(message.data);
-            for (const title of Object.keys(data)) {
-                const tiddlerInfo = data[title];
-                if (tiddlerInfo.deleted) {
-                    $tw.wiki.deleteTiddler(title);
-                } else if (tiddlerInfo.modified) {
-                    const tiddler = $tw.wiki.getTiddler(title);
-                    if (!tiddler || JSON.stringify(tiddler.fields) !== JSON.stringify(tiddlerInfo.tiddler.fields)) {
-                        console.log("Updating tiddler");
-                        $tw.wiki.addTiddler(new $tw.Tiddler(tiddlerInfo.tiddler.fields));
-                    }
-                }
-            }
+	let isGracefulDisconnect = false;
+	let wasConnected = false;
+	let isConnected = false;
+	let connectionId = null;
 
-        }
+	const connect = () => {
+		const webSocket = new WebSocket(`ws://${location.host}/socket-sync`);
 
+		const getFocus = () => {
+			if (!wasConnected) {
+				return;
+			}
 
-    } catch (e) {
-        console.log("Socket-sync client error: " + e);
-    }
+			if (isConnected || isGracefulDisconnect) {
+				window.location.reload();
+			} else {
+				coverDiv.style.display = "none";
+			}
+		};
+
+		const checkConnection = () => {
+			if (webSocket.readyState === WebSocket.OPEN) {
+				webSocket.send(JSON.stringify({
+					type: 'check-focus',
+					data: connectionId
+				}));
+			}
+		};
+
+		webSocket.onopen = () => {
+			wasConnected = true;
+			coverDiv.addEventListener('click', getFocus);
+		};
+		webSocket.onclose = () => {
+			isConnected = false;
+			coverDiv.style.display = 'flex';
+			if (document.activeElement) {
+				document.activeElement.blur();
+			}
+			if (!isGracefulDisconnect) {
+				coverDiv.innerText = "Connection with the server lost. Click to close this dialog or refresh to attempt reconnecting."
+			}
+		};
+		webSocket.onerror = () => {
+			coverDiv.removeEventListener('click', getFocus);
+			webSocket.close();
+		}
+		webSocket.onmessage = (message) => {
+			const { type, data } = JSON.parse(message.data);
+			switch (type) {
+				case 'gain-focus':
+					if (isConnected) {
+						break;
+					}
+
+					isConnected = true;
+					connectionId = data;
+					coverDiv.style.display = 'none';
+					setInterval(checkConnection, 10000);
+					window.addEventListener('focus', checkConnection);
+					window.addEventListener('blur', checkConnection);
+					break;
+
+				case 'lose-focus':
+					isGracefulDisconnect = true;
+					webSocket.close();
+					coverDiv.innerText = "Another instance has a focus, click to take it over.";
+					break;
+			}
+		};
+	}
+
+	try {
+		connect();
+
+	} catch (e) {
+		console.log("Socket-sync client error: " + e);
+	}
 })();

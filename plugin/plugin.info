@@ -1,10 +1,10 @@
 {
-    "title": "$:/plugins/EvidentlyCube/SocketSync",
+    "title": "$:/plugins/EvidentlyCube/SingleInstance",
     "version": "1.0.0",
     "core-version": ">=5.2.2",
-    "description": "Allow musltiple people to use wiki simultaneously and be up to date with the changes.",
+    "description": "Warns you when you try to use an old window with a wiki if it was already opened somewhere else.",
     "author": "Maurycy Zarzycki",
-    "source": "https://github.com/EvidentlyCube/TW5-SocketSync",
+    "source": "https://github.com/EvidentlyCube/TW5-SingleInstance",
     "plugin-type": "plugin",
     "list": "readme license history"
 }

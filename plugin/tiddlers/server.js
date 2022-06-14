@@ -1,103 +1,83 @@
 /*\
-title: $:/plugins/EvidentlyCube/SocketSync/server.js
+title: $:/plugins/EvidentlyCube/SingleInstance/server.js
 type: application/javascript
 module-type: startup
 
 \*/
 
-(function() {
+(function () {
 
-    /*jslint node: true, browser: false */
-    /*global $tw: true */
-    "use strict";
-
-    const ignoredPatterns = [
-        '$:/StoryList'
-    ];
-
-    function matchIgnoredPattern(tiddlerTitle) {
-        for (const pattern of ignoredPatterns) {
-            if (typeof pattern === 'string' && tiddlerTitle === pattern) {
-                return true;
-            } else if (pattern.test && pattern.test(tiddlerTitle)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    $tw.hooks.addHook('th-server-command-post-start', (_, nodeServer) => {
-        if (!$tw.node) {
-            return;
-        }
+	/*jslint node: true, browser: false */
+	/*global $tw: true */
+	"use strict";
 
 
-        const ws = require('ws');
-        const url = require('url');
-        const crypto = require('crypto');
-        const wsServer = new ws.WebSocketServer({ noServer: true });
-        const clients = [];
-        const changedTiddlers = new Map();
+	$tw.hooks.addHook('th-server-command-post-start', (_, nodeServer) => {
+		if (!$tw.node) {
+			return;
+		}
 
-        $tw.wiki.addEventListener("change",function(changes) {
-            const message = {};
-            const tiddlerTitles = Object.keys(changes);
-            for (const tiddlerTitle of tiddlerTitles) {
-                if (matchIgnoredPattern(tiddlerTitle)) {
-                    continue;
-                }
+		let idCounter = 0;
+		let focusedClientId = null;
+		let focusedClient = null;
+		const ws = require('ws');
+		const url = require('url');
+		const wsServer = new ws.WebSocketServer({ noServer: true });
 
-                const tiddler = $tw.wiki.getTiddler(tiddlerTitle);
-                const hash = tiddler
-                    ? crypto.createHash('sha1').update(JSON.stringify(tiddler)).digest('base64')
-                    : '<deleted>';
+		wsServer.on('connection', function (socket) {
+			if (focusedClient) {
+				focusedClient.send(JSON.stringify({
+					type: 'lose-focus',
+					data: true
+				}));
+				focusedClient = null;
+			}
 
-                if (changedTiddlers.get(tiddlerTitle) === hash) {
-                    continue;
-                }
+			const connectionId = ++idCounter;
+			focusedClientId = connectionId;
+			focusedClient = socket;
 
-                changedTiddlers.set(tiddlerTitle, hash);
+			socket.send(JSON.stringify({
+				type: 'gain-focus',
+				data: connectionId
+			}));
 
-                message[tiddlerTitle] = {
-                    ...changes[tiddlerTitle],
-                    tiddler
-                };
-            }
+			socket.on('close', () => {
+				if (focusedClientId === connectionId) {
+					focusedClient = null;
+					focusedClientId = null;
+				}
+			});
 
-            const tiddlersJson = JSON.stringify(message);
-            for (const client of clients) {
-                client.send(tiddlersJson);
-            }
-        });
+			socket.on('message', messageData => {
+				const { type, data } = JSON.parse(messageData);
+				switch (type) {
+					case 'check-focus':
+						if (parseInt(data) === focusedClientId) {
+							break;
+						}
+						// fall through
+					default:
+						socket.send(JSON.stringify({
+							type: 'lose-focus',
+							data: true
+						}));
+						break;
 
-        wsServer.on('connection', function(ws) {
-            console.log("Client connected");
-            clients.push(ws);
+				}
+			})
+		});
 
-            ws.on('close', () => {
-                const index = clients.indexOf(ws);
+		nodeServer.on('upgrade', (request, socket, head) => {
+			const { pathname } = url.parse(request.url);
 
-                if (index !== -1) {
-                    clients.splice(index, 1);
-                }
-            });
-
-            ws.on('message', function message(data) {
-              console.log('received: %s', data);
-            });
-        });
-
-        nodeServer.on('upgrade', (request, socket, head) => {
-            const { pathname } = url.parse(request.url);
-
-            if (pathname === '/socket-sync') {
-                wsServer.handleUpgrade(request, socket, head, (ws) => {
-                    wsServer.emit('connection', ws, request);
-                });
-            } else {
-                socket.destroy();
-            }
-        });
-    });
+			if (pathname === '/socket-sync') {
+				wsServer.handleUpgrade(request, socket, head, (ws) => {
+					wsServer.emit('connection', ws, request);
+				});
+			} else {
+				socket.destroy();
+			}
+		});
+	});
 })();
